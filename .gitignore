@@ -10,3 +10,5 @@
 *.userosscache
 *.sln.doccache
 *.suo
+GEMINI.md
+Content/Content.mgcb
