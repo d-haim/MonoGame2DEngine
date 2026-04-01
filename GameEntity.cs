@@ -1,67 +1,100 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization.Metadata;
 using MonoGameEngine.Components;
 
 namespace MonoGameEngine;
 
-public abstract class GameEntity
+public sealed class GameEntity
 {
     public Transformation Transform { get; private set; }
     public SpriteRenderer Renderer { get; private set; }
     public Collider Collider { get; private set; }
+    public AudioPlayer Audio { get; private set; }
+
     public bool IsActive { get; private set; } = false;
     public bool IsVisible => Renderer != null && Renderer.Texture != null;
     public Scene AttachedScene { get; set; }
 
-    private HashSet<Component> _components = new();
+    internal List<Component> Components = [];
 
-    protected GameEntity(params Component[] components)
+    public GameEntity(params Component[] components)
     {
         IsActive = false;
-        Transform = new Transformation(this);
+        Transform = new Transformation() { Entity = this };
 
         foreach (var component in components)
         {
-            if (component is Transformation)
-                continue;
-            component.Entity = this;
             AddComponent(component);
-            if (component is SpriteRenderer spriteRenderer)
-                Renderer = spriteRenderer;
-            if (component is Collider collider)
-                Collider = collider;
         }
     }
 
-    public void SetActive(bool active)
+    public void SetActive(bool active, object sender = null)
     {
         if (IsActive != active)
         {
             IsActive = active;
-            if (active)
-                AttachedScene.EnableEntity(this);
-            else
-                AttachedScene.DisableEntity(this);
+            if (AttachedScene != null)
+            {
+                if (sender != null && sender is Scene scene && scene == AttachedScene)
+                {
+                    return;
+                }
+
+                if (active)
+                    AttachedScene.EnableEntity(this);
+                else
+                    AttachedScene.DisableEntity(this);
+            }
         }
     }
 
     //TODO componentID for optimized query
-    public void AddComponent<T>(T component) where T : Component
+    public void AddComponent(Component component)
     {
-        if (component.IsSingleInstance && _components.Any(c => c is T))
+        if (component is Transformation)
             return;
 
-        _components.Add(component);
+        component.Entity = this;
+        if (component.IsSingleInstance && Components.Any(c => c.GetType() == component.GetType()))
+            return;
+
+        Components.Add(component);
+        if (component is SpriteRenderer spriteRenderer)
+            Renderer = spriteRenderer;
+        if (component is Collider collider)
+            Collider = collider;
+        if (component is AudioPlayer audioPlayer)
+            Audio = audioPlayer;
+        AttachedScene?.RegisterComponentCallbacks(component);
     }
 
-    public void RemoveComponent<T>(T component) where T : Component
+    public void RemoveComponent(Component component)
     {
-        if (_components.Contains(component))
-            _components.Remove(component);
+        if (component is Transformation)
+            return;
+
+        if (Components.Contains(component))
+            Components.Remove(component);
+
+        component.Entity = null;
+        if (component is SpriteRenderer spriteRenderer)
+            Renderer = null;
+        if (component is Collider collider)
+            Collider = null;
+        if (component is AudioPlayer audioPlayer)
+            Audio = null;
+        AttachedScene?.UnregisterComponentCallbacks(component);
     }
 
     public T GetComponent<T>() where T : Component
     {
-        return _components.FirstOrDefault(c => c is T) as T;
+        return Components.FirstOrDefault(c => c is T) as T;
+    }
+
+    public bool TryGetComponent<T>(out T component) where T : Component
+    {
+        component = GetComponent<T>();
+        return component != null;
     }
 }

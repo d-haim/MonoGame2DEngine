@@ -2,9 +2,9 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 
-namespace MonoGameEngine.Utils.Collections;
+namespace MonoGameEngine.Collections;
 
-public class ObjectPool<T> : IEnumerable<T>
+public sealed class ObjectPool<T> : IDisposable
 {
     private readonly List<T> _pool;
     private readonly Func<T> _onCreate;
@@ -12,6 +12,8 @@ public class ObjectPool<T> : IEnumerable<T>
     private readonly Action<T> _onRelease;
     private readonly Action<T> _onDispose;
     private readonly int _maxSize;
+
+    public T Current => throw new NotImplementedException();
 
     public ObjectPool(Func<T> onCreate, Action<T> onGet = null, Action<T> onRelease = null, Action<T> onDispose = null, int initialSize = 10, int maxSize = 100)
     {
@@ -55,13 +57,12 @@ public class ObjectPool<T> : IEnumerable<T>
         }
     }
 
-    public IEnumerator<T> GetEnumerator()
+    public void Dispose()
     {
-        return _pool.GetEnumerator();
-    }
-
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
+        foreach (T item in _pool)
+        {
+            _onDispose?.Invoke(item);
+        }
+        _pool.Clear();
     }
 }

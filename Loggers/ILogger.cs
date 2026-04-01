@@ -1,4 +1,4 @@
-namespace MonoGameEngine.Utils.Loggers;
+namespace MonoGameEngine.Loggers;
 
 public interface ILogger
 {

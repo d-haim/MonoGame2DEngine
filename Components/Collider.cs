@@ -4,8 +4,6 @@ namespace MonoGameEngine.Components;
 
 public sealed class Collider : Component
 {
-    public Collider(GameEntity entity) : base(entity) { }
-
     public bool IsTrigger { get; set; } = false;
 
     public Rectangle Bounds
@@ -25,6 +23,11 @@ public sealed class Collider : Component
                 (int)height
             );
         }
+    }
+
+    public Collider(bool isTrigger = false)
+    {
+        IsTrigger = isTrigger;
     }
 
     public bool Intersects(Collider other)

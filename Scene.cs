@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
+using System.Linq;
+using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using MonoGameEngine.Components;
@@ -19,251 +20,377 @@ public sealed class Scene
     private const string ON_TRIGGER_METHOD_NAME = "OnTrigger";
 
     private HashSet<GameEntity> _entities = [];
+    private HashSet<Component> _cachedComponents = [];
     private List<GameEntity> _pendingAdd = [];
     private List<GameEntity> _pendingRemove = [];
-    private Dictionary<GameEntity, Action> _onActiveMethods = [];
-    private Dictionary<GameEntity, Action> _onDeactivateMethods = [];
-    private Dictionary<GameEntity, Action<float>> _onUpdateMethods = [];
-    private Dictionary<GameEntity, Action> _onDrawMethods = [];
-    private Dictionary<GameEntity, Action<GameEntity>> _onCollisionMethods = [];
-    private Dictionary<GameEntity, Action<GameEntity>> _onTriggerMethods = [];
-    private List<Action<float>> _activeUpdates = new();
-    private List<Collider> _activeColliders = new();
+    private List<GameEntity> _pendingEnable = [];
+    private List<GameEntity> _pendingDisable = [];
+    private Dictionary<Component, Action> _onEnableMethods = [];
+    private Dictionary<Component, Action> _onDisableMethods = [];
+    private Dictionary<Component, Action<float>> _onUpdateMethods = [];
+    private Dictionary<Component, Action> _onDrawMethods = [];
+    private Dictionary<Component, Action<Collider>> _onCollisionMethods = [];
+    private Dictionary<Component, Action<Collider>> _onTriggerMethods = [];
+    private HashSet<Action<float>> _activeUpdates = [];
 
+    /// <summary>
+    /// Add an entity from the scene
+    /// Invokes OnEnable callbacks on entity components
+    /// </summary>
+    /// <param name="entity"></param>
     public void AddEntity(GameEntity entity)
     {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(entity);
+        }
+        catch (ArgumentNullException e)
+        {
+            System.Diagnostics.Debug.Write(e.Message);
+            System.Diagnostics.Debug.WriteLine(e.StackTrace);
+            return;
+        }
+
+        if (_pendingAdd.Contains(entity))
+            return;
+
         _pendingAdd.Add(entity);
+        EnableEntity(entity);
     }
 
+    /// <summary>
+    /// Remove an entity from the scene
+    /// Invokes OnDisable callback on entity components
+    /// </summary>
+    /// <param name="entity"></param>
     public void RemoveEntity(GameEntity entity)
     {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(entity);
+        }
+        catch (ArgumentNullException e)
+        {
+            System.Diagnostics.Debug.Write(e.Message);
+            System.Diagnostics.Debug.WriteLine(e.StackTrace);
+            return;
+        }
+
+        if (_pendingRemove.Contains(entity))
+            return;
+
+        DisableEntity(entity);
         _pendingRemove.Add(entity);
     }
 
+    /// <summary>
+    /// Enable an entity that is attached to the scene and is currently disabled
+    /// Invokes OnEnable callback on entity components
+    /// </summary>
+    /// <param name="entity"></param>
     public void EnableEntity(GameEntity entity)
     {
-        if (entity.IsActive)
+        if (_pendingEnable.Contains(entity))
             return;
 
-        entity.SetActive(true);
-        if (_onUpdateMethods.TryGetValue(entity, out var onUpdate))
-        {
-            _activeUpdates.Add(onUpdate);
-        }
-
-        if (entity.Collider != null)
-        {
-            _activeColliders.Add(entity.Collider);
-        }
-
-        if (_onActiveMethods.TryGetValue(entity, out var callback))
-        {
-            callback();
-        }
+        _pendingEnable.Add(entity);
     }
 
+    /// <summary>
+    /// Disable an entity that is attached to the scene and is currently enabled
+    /// Invokes OnEnable callback on entity components
+    /// Entity will not render, update and perform collision check
+    /// </summary>
+    /// <param name="entity"></param>
     public void DisableEntity(GameEntity entity)
     {
-        if (entity.IsActive == false)
+        if (_pendingDisable.Contains(entity))
             return;
 
-        entity.SetActive(false);
-        if (_onUpdateMethods.TryGetValue(entity, out var onUpdate))
-        {
-            _activeUpdates.Remove(onUpdate);
-        }
-
-        if (entity.Collider != null)
-        {
-            _activeColliders.Remove(entity.Collider);
-        }
-
-        if (_onDeactivateMethods.TryGetValue(entity, out var callback))
-        {
-            callback();
-        }
+        _pendingDisable.Add(entity);
     }
 
-    private void ApplyChanges()
-    {
-        if (_pendingRemove.Count > 0)
-        {
-            foreach (var entity in _pendingRemove)
-            {
-                DisableEntity(entity);
-                entity.AttachedScene = null;
-                _entities.Remove(entity);
-                _onActiveMethods.Remove(entity);
-                _onDeactivateMethods.Remove(entity);
-                _onUpdateMethods.Remove(entity);
-                _onDrawMethods.Remove(entity);
-                _onCollisionMethods.Remove(entity);
-                _onTriggerMethods.Remove(entity);
-            }
-            _pendingRemove.Clear();
-        }
-
-        if (_pendingAdd.Count > 0)
-        {
-            foreach (var entity in _pendingAdd)
-            {
-                if (_entities.Add(entity))
-                {
-                    entity.AttachedScene = this;
-
-                    if (TryGetMethodFromEntity<Action>(entity, ON_ACTIVE_METHOD_NAME, out var activeMethod))
-                    {
-                        _onActiveMethods.Add(entity, activeMethod);
-                    }
-
-                    if (TryGetMethodFromEntity<Action>(entity, ON_DEACTIVATE_METHOD_NAME, out var deactivateMethod))
-                    {
-                        _onDeactivateMethods.Add(entity, deactivateMethod);
-                    }
-
-                    if (TryGetMethodFromEntity<Action<float>>(entity, ON_UPDATE_METHOD_NAME, out var updateMethod,
-                        m => VerifyMethodParameters(m, (typeof(float), DELTA_TIME_PARAMETER_NAME))))
-                    {
-                        _onUpdateMethods.Add(entity, updateMethod);
-                    }
-
-                    if (entity.Renderer != null)
-                    {
-                        if (TryGetMethodFromEntity<Action>(entity, ON_DRAW_METHOD_NAME, out var drawMethod))
-                        {
-                            _onDrawMethods.Add(entity, drawMethod);
-                        }
-                    }
-
-                    if (entity.Collider != null)
-                    {
-                        if (TryGetMethodFromEntity<Action<GameEntity>>(entity, ON_COLLISION_METHOD_NAME, out var onCollisionMethod,
-                            m => VerifyMethodParameters(m, (typeof(GameEntity), "other"))))
-                        {
-                            _onCollisionMethods.Add(entity, onCollisionMethod);
-                        }
-
-                        if (TryGetMethodFromEntity<Action<GameEntity>>(entity, ON_TRIGGER_METHOD_NAME, out var onTriggerMethod,
-                            m => VerifyMethodParameters(m, (typeof(GameEntity), "other"))))
-                        {
-                            _onTriggerMethods.Add(entity, onTriggerMethod);
-                        }
-                    }
-                    EnableEntity(entity);
-                }
-            }
-            _pendingAdd.Clear();
-        }
-    }
-
-    public void Update(GameTime gameTime)
+    internal void Update(GameTime gameTime)
     {
         ApplyChanges();
         DoEntityUpdates(gameTime);
         DoCollisions();
     }
 
-    private void DoCollisions()
+    internal void Draw(SpriteBatch spriteBatch)
     {
-        foreach (var collider in _activeColliders)
+        ApplyChanges();
+        var visibleEntities = _entities.Where(e => e.IsVisible);
+        var scalingMatrix = Viewport.GetScaleMatrix();
+        spriteBatch.Begin(transformMatrix: scalingMatrix, samplerState: SamplerState.PointClamp);
+        foreach (var entity in visibleEntities)
         {
-            if (collider.IsTrigger == false)
+            foreach (var component in entity.Components)
             {
-                foreach (var other in _activeColliders)
+                if (_onDrawMethods.TryGetValue(component, out var callback))
                 {
-                    if (collider.Intersects(other))
-                    {
-                        if (_onCollisionMethods.TryGetValue(collider.Entity, out var collision))
-                        {
-                            collision(other.Entity);
-                        }
-
-                        if (other.IsTrigger)
-                        {
-                            if (_onTriggerMethods.TryGetValue(other.Entity, out var trigger))
-                            {
-                                trigger(collider.Entity);
-                            }
-                        }
-                    }
+                    callback();
                 }
             }
+
+            spriteBatch.Draw(
+                entity.Renderer.Texture,
+                entity.Transform.Position,
+                null,
+                entity.Renderer.Color,
+                entity.Transform.Rotation,
+                entity.Renderer.Pivot,
+                entity.Transform.Scale,
+                entity.Renderer.Effects,
+                0f);
+        }
+        spriteBatch.End();
+    }
+
+    internal void RegisterComponentsCallbacks(IEnumerable<Component> components)
+    {
+        foreach (var component in components)
+        {
+            RegisterComponentCallbacks(component);
+        }
+    }
+
+    internal void RegisterComponentCallbacks(Component component)
+    {
+        bool wasCached = false;
+
+        if (component.TryGetCallbackFromMethod<Action>(ON_ACTIVE_METHOD_NAME, out var activeMethod))
+        {
+            _onEnableMethods.Add(component, activeMethod);
+            wasCached = true;
+        }
+
+        if (component.TryGetCallbackFromMethod<Action>(ON_DEACTIVATE_METHOD_NAME, out var deactivateMethod))
+        {
+            _onDisableMethods.Add(component, deactivateMethod);
+            wasCached = true;
+        }
+
+        if (component.TryGetCallbackFromMethod<Action<float>>(ON_UPDATE_METHOD_NAME, out Action<float> updateMethod,
+            m => m.VerifyMethodParameters((typeof(float), DELTA_TIME_PARAMETER_NAME))))
+        {
+            _onUpdateMethods.Add(component, updateMethod);
+            wasCached = true;
+        }
+
+        if (component.TryGetCallbackFromMethod<Action>(ON_DRAW_METHOD_NAME, out var drawMethod))
+        {
+            _onDrawMethods.Add(component, drawMethod);
+            wasCached = true;
+        }
+
+        if (component.TryGetCallbackFromMethod<Action<Collider>>(ON_COLLISION_METHOD_NAME, out var onCollisionMethod,
+            m => m.VerifyMethodParameters((typeof(Collider), "other"))))
+        {
+            _onCollisionMethods.Add(component, onCollisionMethod);
+            wasCached = true;
+        }
+
+        if (component.TryGetCallbackFromMethod<Action<Collider>>(ON_TRIGGER_METHOD_NAME, out var onTriggerMethod,
+            m => m.VerifyMethodParameters((typeof(Collider), "other"))))
+        {
+            _onTriggerMethods.Add(component, onTriggerMethod);
+            wasCached = true;
+        }
+
+        if (wasCached)
+        {
+            _cachedComponents.Add(component);
+        }
+    }
+
+    internal void UnregisterComponentsCallbacks(IEnumerable<Component> components)
+    {
+        foreach (var component in components)
+        {
+            UnregisterComponentCallbacks(component);
+        }
+    }
+
+    internal void UnregisterComponentCallbacks(Component component)
+    {
+        if (!_cachedComponents.Remove(component))
+            return;
+
+        _onEnableMethods.Remove(component);
+        _onDisableMethods.Remove(component);
+        _onUpdateMethods.Remove(component);
+        _onDrawMethods.Remove(component);
+        _onCollisionMethods.Remove(component);
+        _onTriggerMethods.Remove(component);
+    }
+
+    private void InternalEnableEntity(GameEntity entity)
+    {
+        entity.SetActive(true, this);
+
+        var components = entity.Components.DeepCopy();
+        foreach (var component in components)
+        {
+            if (!_cachedComponents.Contains(component))
+                continue;
+
+            if (_onUpdateMethods.TryGetValue(component, out var onUpdate))
+            {
+                try
+                {
+                    _activeUpdates.Add(onUpdate);
+                }
+                catch (System.Exception e)
+                {
+                    System.Diagnostics.Debug.Write(e.Message);
+                    System.Diagnostics.Debug.WriteLine(e.StackTrace);
+                }
+            }
+
+            if (_onEnableMethods.TryGetValue(component, out var callback))
+            {
+                callback();
+            }
+        }
+    }
+
+    private void InternalDisableEntity(GameEntity entity)
+    {
+        entity.SetActive(false, this);
+
+        var components = entity.Components.DeepCopy();
+        foreach (var component in components)
+        {
+            if (!_cachedComponents.Contains(component))
+                continue;
+
+            if (_onUpdateMethods.TryGetValue(component, out var onUpdate))
+            {
+                _activeUpdates.Remove(onUpdate);
+            }
+
+            if (_onDisableMethods.TryGetValue(component, out var callback))
+            {
+                callback();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Apply changes to active entities and components before performing updated and collisions
+    /// </summary>
+    private void ApplyChanges()
+    {
+        if (_pendingDisable.Count > 0)
+        {
+            List<GameEntity> toDisable = _pendingDisable.DeepCopy();
+            _pendingDisable.Clear();
+            foreach (var entity in toDisable)
+            {
+                InternalDisableEntity(entity);
+            }
+            toDisable.Clear();
+        }
+
+        if (_pendingRemove.Count > 0)
+        {
+            List<GameEntity> toRemove = _pendingRemove.DeepCopy();
+            _pendingRemove.Clear();
+            foreach (var entity in toRemove)
+            {
+                var components = entity.Components.DeepCopy();
+                UnregisterComponentsCallbacks(components);
+                entity.AttachedScene = null;
+                _entities.Remove(entity);
+            }
+            toRemove.Clear();
+        }
+
+        if (_pendingAdd.Count > 0)
+        {
+            List<GameEntity> toAdd = _pendingAdd.DeepCopy();
+            _pendingAdd.Clear();
+            foreach (var entity in toAdd)
+            {
+                if (_entities.Add(entity))
+                {
+                    entity.AttachedScene = this;
+                    var components = entity.Components.DeepCopy();
+                    RegisterComponentsCallbacks(components);
+                }
+            }
+            toAdd.Clear();
+        }
+
+        if (_pendingEnable.Count > 0)
+        {
+            List<GameEntity> toEnable = _pendingEnable.DeepCopy();
+            _pendingEnable.Clear();
+            foreach (var entity in toEnable)
+            {
+                InternalEnableEntity(entity);
+            }
+            toEnable.Clear();
         }
     }
 
     private void DoEntityUpdates(GameTime gameTime)
     {
-        float deltaTime = gameTime.DeltaTime();
+        float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
         foreach (var callback in _activeUpdates)
         {
             callback(deltaTime);
         }
     }
 
-    public void Draw(SpriteBatch spriteBatch)
+    /// <summary>
+    /// Collision check done with comparing all the active non-trigger colliders against all colliders
+    /// </summary>
+    private void DoCollisions()
     {
-        ApplyChanges();
-        var scalingMatrix = Viewport.GetScaleMatrix(spriteBatch.GraphicsDevice);
-        spriteBatch.Begin(transformMatrix: scalingMatrix, samplerState: SamplerState.PointClamp);
-        foreach (var entity in _entities)
+        var activeColliders = _entities.Where(e => e.Collider != null).Select(e => e.Collider);
+        foreach (var collider in activeColliders)
         {
-            if (entity.IsVisible == false)
-                continue;
-
-            if (_onDrawMethods.TryGetValue(entity, out var callback))
+            if (collider.IsTrigger == false)
             {
-                callback();
+                foreach (var other in activeColliders)
+                {
+                    if (collider != other && collider.Intersects(other))
+                    {
+                        var components = collider.Entity.Components.DeepCopy();
+                        foreach (var component in components)
+                        {
+                            if (component == collider || _cachedComponents.Contains(component) == false)
+                            {
+                                continue;
+                            }
+
+                            if (_onCollisionMethods.TryGetValue(component, out var collision))
+                            {
+                                collision(other);
+                            }
+                        }
+
+                        if (other.IsTrigger)
+                        {
+                            components = other.Entity.Components.DeepCopy();
+                            foreach (var component in components)
+                            {
+                                if (component == other || _cachedComponents.Contains(component) == false)
+                                {
+                                    continue;
+                                }
+
+                                if (_onTriggerMethods.TryGetValue(component, out var trigger))
+                                {
+                                    trigger(collider);
+                                }
+                            }
+                        }
+                    }
+                }
             }
-
-            if (entity.Renderer != null && entity.Renderer.Texture != null)
-            {
-                spriteBatch.Draw(
-                    entity.Renderer.Texture,
-                    entity.Transform.Position,
-                    null,
-                    entity.Renderer.Color,
-                    entity.Transform.Rotation,
-                    entity.Renderer.Pivot,
-                    entity.Transform.Scale,
-                    entity.Renderer.Effects,
-                    0f);
-            }
         }
-        spriteBatch.End();
-    }
-
-    private static bool TryGetMethodFromEntity<T>(
-        GameEntity entity,
-        string methodName,
-        out T callback,
-        Predicate<MethodInfo> verifyMethod = null) where T : Delegate
-    {
-        callback = default;
-        var method = entity.GetType().GetMethod(methodName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        bool hasMethod = method != null;
-        if (hasMethod && (verifyMethod == null || verifyMethod(method)))
-        {
-            callback = (T)Delegate.CreateDelegate(typeof(T), entity, method);
-            return true;
-        }
-        return false;
-    }
-
-    private static bool VerifyMethodParameters(MethodInfo method, params (Type parameterType, string parameterName)[] expectedParameters)
-    {
-        var parameters = method.GetParameters();
-        if (parameters.Length != expectedParameters.Length)
-            return false;
-
-        for (int i = 0; i < parameters.Length; i++)
-        {
-            var parameter = parameters[i];
-            var expectedProperty = expectedParameters[i];
-            if (parameter.ParameterType != expectedProperty.parameterType)
-                return false;
-            if (parameter.Name != expectedProperty.parameterName)
-                return false;
-        }
-        return true;
     }
 }

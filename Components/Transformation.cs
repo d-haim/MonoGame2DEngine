@@ -10,8 +10,6 @@ public sealed class Transformation : Component
     public float Scale { get; set; } = 1.0f;
     public float Rotation { get; set; } = 0.0f;
 
-    public Transformation(GameEntity entity) : base(entity) { }
-
     public override int GetHashCode()
     {
         return HashCode.Combine(Position, Scale, Rotation);
