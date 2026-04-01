@@ -10,11 +10,13 @@ public class GameEngine : Game
     public static new GraphicsDevice GraphicsDevice { get; private set; }
     public static SpriteBatch SpriteBatch { get; private set; }
     public static new ContentManager Content { get; private set; }
+    public static AudioController Audio { get; private set; }
 
     public GameEngine(string title, int width, int height, bool fullScreen)
     {
         Window.Title = title;
         Graphics = new GraphicsDeviceManager(this);
+        Audio = new AudioController();
         Viewport.Initialize(Graphics, width, height, fullScreen);
         Content = base.Content;
         Content.RootDirectory = "Content";
