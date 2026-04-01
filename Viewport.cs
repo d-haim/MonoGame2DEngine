@@ -7,13 +7,15 @@ namespace MonoGameEngine;
 public static class Viewport
 {
     //TODO Should be external configuration
-    public const int VIRTUAL_WIDTH = 800;
-    public const int VIRTUAL_HEIGHT = 600;
+    public const int VIRTUAL_WIDTH = 600;
+    public const int VIRTUAL_HEIGHT = 800;
 
-    public static int Width => _graphics.PreferredBackBufferWidth;
-    public static int Height => _graphics.PreferredBackBufferHeight;
+    public static int Width => _graphics.GraphicsDevice.PresentationParameters.BackBufferWidth;
+    public static int Height => _graphics.GraphicsDevice.PresentationParameters.BackBufferHeight;
+    public static Rectangle Bounds => new Rectangle(0, 0, Width, Height);
 
     private static GraphicsDeviceManager _graphics;
+    private static Rectangle _bounds => new Rectangle(0, 0, Width, Height);
 
     internal static void Initialize(GraphicsDeviceManager graphics, int width, int height, bool fullScreen)
     {
@@ -24,17 +26,24 @@ public static class Viewport
         _graphics.ApplyChanges();
     }
 
-    public static Matrix GetScaleMatrix(GraphicsDevice device)
+    public static Matrix GetScaleMatrix()
     {
-        float scaleX = (float)device.PresentationParameters.BackBufferWidth / (float)VIRTUAL_WIDTH;
-        float scaleY = (float)device.PresentationParameters.BackBufferHeight / (float)VIRTUAL_HEIGHT;
+        float width = Width;
+        float height = Height;
+
+        float scaleX = width / (float)VIRTUAL_WIDTH;
+        float scaleY = height / (float)VIRTUAL_HEIGHT;
         float finalScale = Math.Min(scaleX, scaleY);
 
         // Calculate offsets to center the virtual screen
-        float offsetX = (device.Viewport.Width - (VIRTUAL_WIDTH * finalScale)) / 2f;
-        float offsetY = (device.Viewport.Height - (VIRTUAL_HEIGHT * finalScale)) / 2f;
+        float offsetX = (width - (VIRTUAL_WIDTH * finalScale)) / 2f;
+        float offsetY = (height - (VIRTUAL_HEIGHT * finalScale)) / 2f;
 
         return Matrix.CreateScale(finalScale, finalScale, 1.0f) *
                Matrix.CreateTranslation(offsetX, offsetY, 0f);
     }
+
+    public static bool InBounds(int x, int y) => Bounds.Contains(x, y);
+    public static bool InBounds(Vector2 position) => Bounds.Contains(position);
+
 }
