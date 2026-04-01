@@ -1,4 +1,5 @@
-﻿using Microsoft.Xna.Framework;
+﻿using System.ComponentModel;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -6,6 +7,8 @@ namespace MonoGameEngine;
 
 public class GameEngine : Game
 {
+    public static GameEngine Instance;
+
     public static GraphicsDeviceManager Graphics { get; private set; }
     public static new GraphicsDevice GraphicsDevice { get; private set; }
     public static SpriteBatch SpriteBatch { get; private set; }
@@ -21,21 +24,22 @@ public class GameEngine : Game
         Content = base.Content;
         Content.RootDirectory = "Content";
         IsMouseVisible = true;
+        Instance = this;
     }
 
     protected override void Initialize()
     {
-        base.Initialize();
         GraphicsDevice = base.GraphicsDevice;
         Bootstrapper.InvokeInitializationMethods();
+        base.Initialize();
     }
 
     protected override void LoadContent()
     {
         SpriteBatch = new SpriteBatch(GraphicsDevice);
+        base.LoadContent();
         Bootstrapper.InvokeContentLoadingMethods(Content);
         SceneManager.LoadScene(0);
-        base.LoadContent();
     }
 
     protected override void Update(GameTime gameTime)
