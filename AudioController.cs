@@ -2,10 +2,11 @@ namespace MonoGameEngine;
 
 using System;
 using System.Collections.Generic;
+using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using Microsoft.Xna.Framework.Media;
 
-public class AudioController : IDisposable
+public class AudioController : GameComponent, IDisposable
 {
     // Tracks sound effect instances created so they can be paused, unpaused, and/or disposed.
     private readonly List<SoundEffectInstance> _activeSoundEffectInstances;
@@ -87,18 +88,16 @@ public class AudioController : IDisposable
     /// <summary>
     /// Creates a new audio controller instance.
     /// </summary>
-    public AudioController()
+    public AudioController(Game game) : base(game)
     {
+        game.Components.Add(this);
         _activeSoundEffectInstances = new List<SoundEffectInstance>();
     }
-
-    // Finalizer called when object is collected by the garbage collector.
-    ~AudioController() => Dispose(false);
 
     /// <summary>
     /// Updates this audio controller.
     /// </summary>
-    public void Update()
+    public override void Update(GameTime gameTime)
     {
         for (int i = _activeSoundEffectInstances.Count - 1; i >= 0; i--)
         {
@@ -247,19 +246,10 @@ public class AudioController : IDisposable
     }
 
     /// <summary>
-    /// Disposes of this audio controller and cleans up resources.
-    /// </summary>
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    /// <summary>
     /// Disposes this audio controller and cleans up resources.
     /// </summary>
     /// <param name="disposing">Indicates whether managed resources should be disposed.</param>
-    protected void Dispose(bool disposing)
+    protected override void Dispose(bool disposing)
     {
         if (IsDisposed)
         {
@@ -273,6 +263,7 @@ public class AudioController : IDisposable
                 soundEffectInstance.Dispose();
             }
             _activeSoundEffectInstances.Clear();
+            Game.Components.Remove(this);
         }
 
         IsDisposed = true;
