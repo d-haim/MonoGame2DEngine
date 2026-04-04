@@ -11,13 +11,20 @@ public class InputController : GameComponent
 {
     public struct InputContext
     {
-        public float deltaTime;
-        public KeyboardState keyboardState;
-        public MouseState mouseState;
-        public JoystickState joystickState;
+        public float DeltaTime { get; internal set; }
+        public KeyboardState KeyboardState { get; internal set; }
+        public MouseState MouseState { get; internal set; }
+        public JoystickState JoystickState { get; internal set; }
+        public int HorizontalRaw { get; internal set; }
+        public int VerticalRaw { get; internal set; }
+        public float Horizontal { get; internal set; }
+        public float Vertical { get; internal set; }
     }
 
     private Dictionary<Component, List<(string eventName, Predicate<InputContext> predicate, Action<InputContext> action)>> _inputCallbacks;
+    private float _horizontal;
+    private float _vertical;
+    private float _inputAcceleration = 1.0f;
 
     public InputController(Game game) : base(game)
     {
@@ -37,12 +44,66 @@ public class InputController : GameComponent
 
     public override void Update(GameTime gameTime)
     {
+        var keyboardState = Keyboard.GetState();
+        var mouseState = Mouse.GetState();
+        var joystickState = Joystick.GetState(1);
+
+        float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
+
+        //Keyboard input
+        //TODO Keys should be configurable
+        if (keyboardState.IsKeyDown(Keys.W) || keyboardState.IsKeyDown(Keys.Up))
+        {
+            if (_vertical > 0)
+                this._vertical = 0;
+
+            this._vertical -= deltaTime * _inputAcceleration;
+        }
+        else if (keyboardState.IsKeyDown(Keys.S) || keyboardState.IsKeyDown(Keys.Down))
+        {
+            if (_vertical < 0)
+                this._vertical = 0;
+
+            this._vertical += deltaTime * _inputAcceleration;
+        }
+        else
+        {
+            this._vertical = 0;
+        }
+
+
+        if (keyboardState.IsKeyDown(Keys.A) || keyboardState.IsKeyDown(Keys.Left))
+        {
+            if (_horizontal > 0)
+                this._horizontal = 0;
+
+            this._horizontal -= deltaTime * _inputAcceleration;
+        }
+        else if (keyboardState.IsKeyDown(Keys.D) || keyboardState.IsKeyDown(Keys.Right))
+        {
+            if (_horizontal < 0)
+                this._horizontal = 0;
+
+            this._horizontal += deltaTime * _inputAcceleration;
+        }
+        else
+        {
+            this._horizontal = 0;
+        }
+
+        this._horizontal = Math.Clamp(this._horizontal, -1, 1);
+        this._vertical = Math.Clamp(this._vertical, -1, 1);
+
         InputContext context = new InputContext
         {
-            deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds,
-            keyboardState = Keyboard.GetState(),
-            mouseState = Mouse.GetState(),
-            joystickState = Joystick.GetState(1)
+            DeltaTime = deltaTime,
+            KeyboardState = Keyboard.GetState(),
+            MouseState = Mouse.GetState(),
+            JoystickState = Joystick.GetState(1),
+            HorizontalRaw = this._horizontal > 0 ? 1 : this._horizontal < 0 ? -1 : 0,
+            VerticalRaw = this._vertical > 0 ? 1 : this._vertical < 0 ? -1 : 0,
+            Horizontal = this._horizontal,
+            Vertical = this._vertical
         };
 
         foreach (var owner in _inputCallbacks.Keys)
