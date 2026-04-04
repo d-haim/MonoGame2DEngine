@@ -1,5 +1,4 @@
-﻿using System.ComponentModel;
-using Microsoft.Xna.Framework;
+﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -15,6 +14,7 @@ public class GameEngine : Game
     public static new ContentManager Content { get; private set; }
     public static AudioController Audio { get; private set; }
     public static InputController Input { get; private set; }
+    public static EventBus EventBus { get; private set; }
 
     public GameEngine(string title, int width, int height, bool fullScreen)
     {
@@ -22,6 +22,7 @@ public class GameEngine : Game
         Graphics = new GraphicsDeviceManager(this);
         Audio = new AudioController(this);
         Input = new InputController(this);
+        EventBus = new EventBus();
         Viewport.Initialize(Graphics, width, height, fullScreen);
         Content = base.Content;
         Content.RootDirectory = "Content";

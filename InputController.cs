@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Input;
 using MonoGameEngine.Components;
+using MonoGameEngine.Events;
 
 namespace MonoGameEngine;
 
@@ -56,6 +57,7 @@ public class InputController : GameComponent
                 if (callback.predicate(context))
                 {
                     callback.action(context);
+                    GameEngine.EventBus.Publish(new InputEvent(callback.eventName));
                 }
             }
         }
@@ -67,5 +69,10 @@ public class InputController : GameComponent
         _inputCallbacks = null;
         Game.Components.Remove(this);
         base.Dispose(disposing);
+    }
+
+    public class InputEvent : Event
+    {
+        public InputEvent(string name) : base(name) { }
     }
 }
