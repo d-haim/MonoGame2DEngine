@@ -61,6 +61,17 @@ public sealed class Timer : GameComponent, IDisposable
         IsActive = false;
     }
 
+    public static void Single(float interval, Action action)
+    {
+        var timer = new Timer(interval);
+        timer.OnElapsed += () =>
+        {
+            action?.Invoke();
+            timer.Dispose();
+        };
+        timer.Start();
+    }
+
     protected override void Dispose(bool disposing)
     {
         GameEngine.Instance.Components.Remove(this);
