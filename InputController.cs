@@ -132,7 +132,7 @@ public class InputController : GameComponent
         base.Dispose(disposing);
     }
 
-    public class InputEvent : Event
+    public class InputEvent : Events.EventHandler
     {
         public InputEvent(string name) : base(name) { }
     }

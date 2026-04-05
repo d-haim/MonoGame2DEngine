@@ -15,7 +15,7 @@ public class EventBus : IEventBus
         _listeners = [];
     }
 
-    public void Publish<T>(T @event) where T : Event
+    public void Publish<T>(T @event) where T : Events.EventHandler
     {
         if (!_listeners.ContainsKey(@event.GetType()))
         {
@@ -28,7 +28,7 @@ public class EventBus : IEventBus
         }
     }
 
-    public void Subscribe<T>(object sender, Action<T> listener) where T : Event
+    public void Subscribe<T>(object sender, Action<T> listener) where T : Events.EventHandler
     {
         var type = typeof(T);
         if (!_listeners.ContainsKey(type))
@@ -38,7 +38,7 @@ public class EventBus : IEventBus
         _listeners[type].Add((sender, (o) => listener(o as T)));
     }
 
-    public void Unsubscribe<T>(object sender) where T : Event
+    public void Unsubscribe<T>(object sender) where T : Events.EventHandler
     {
         var type = typeof(T);
         if (!_listeners.ContainsKey(type))
