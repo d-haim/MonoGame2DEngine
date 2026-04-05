@@ -43,6 +43,11 @@ public static class Viewport
                Matrix.CreateTranslation(offsetX, offsetY, 0f);
     }
 
+    public static RenderTarget2D GetRenderTarget2D()
+    {
+        return new RenderTarget2D(_graphics.GraphicsDevice, VIRTUAL_WIDTH, VIRTUAL_HEIGHT);
+    }
+
     public static bool InBounds(int x, int y) => Bounds.Contains(x, y);
     public static bool InBounds(Vector2 position) => Bounds.Contains(position);
 
