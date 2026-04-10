@@ -10,6 +10,8 @@ public static partial class SceneManager
     private static readonly Dictionary<int, Func<Scene>> _sceneLoaders = new();
     private static readonly Dictionary<string, int> _sceneNames = new();
 
+    public static bool HasScenes => _sceneLoaders.Count > 0 || GetInternalSceneCount() > 0;
+
     public static void RegisterScene(int index, string name, Func<Scene> loader)
     {
         _sceneLoaders[index] = loader;
@@ -57,4 +59,5 @@ public static partial class SceneManager
     // These remain for MonoGameEngine's own internal scenes (if any)
     private static partial Scene LoadSceneInternal(int index);
     private static partial void LoadSceneInternal(string name);
+    private static partial int GetInternalSceneCount();
 }

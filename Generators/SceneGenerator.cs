@@ -66,11 +66,47 @@ public class SceneGenerator : IIncrementalGenerator
     private List<(string Name, string Path, int Index)> ParseScenesYaml(string content)
     {
         var result = new List<(string Name, string Path, int Index)>();
-        var matches = Regex.Matches(content, @"- Name:\s*""([^""]+)""\s+Path:\s*""([^""]+)""\s+Index:\s*(\d+)");
-        foreach (Match match in matches)
+        var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        
+        string currentName = null;
+        string currentPath = null;
+        int? currentIndex = null;
+
+        foreach (var line in lines)
         {
-            result.Add((match.Groups[1].Value, match.Groups[2].Value, int.Parse(match.Groups[3].Value)));
+            var trimmed = line.Trim();
+            if (trimmed.StartsWith("- Name:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (currentName != null && currentPath != null && currentIndex.HasValue)
+                {
+                    result.Add((currentName, currentPath, currentIndex.Value));
+                }
+                currentName = trimmed.Substring("- Name:".Length).Trim().Trim('"');
+                currentPath = null;
+                currentIndex = null;
+            }
+            else if (trimmed.StartsWith("Name:", StringComparison.OrdinalIgnoreCase) && currentName == null)
+            {
+                currentName = trimmed.Substring("Name:".Length).Trim().Trim('"');
+            }
+            else if (trimmed.StartsWith("Path:", StringComparison.OrdinalIgnoreCase))
+            {
+                currentPath = trimmed.Substring("Path:".Length).Trim().Trim('"');
+            }
+            else if (trimmed.StartsWith("Index:", StringComparison.OrdinalIgnoreCase))
+            {
+                if (int.TryParse(trimmed.Substring("Index:".Length).Trim(), out int val))
+                {
+                    currentIndex = val;
+                }
+            }
         }
+
+        if (currentName != null && currentPath != null && currentIndex.HasValue)
+        {
+            result.Add((currentName, currentPath, currentIndex.Value));
+        }
+
         return result;
     }
 
@@ -84,20 +120,21 @@ public class SceneGenerator : IIncrementalGenerator
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
-            if (trimmed.StartsWith("- Type:"))
+            if (trimmed.StartsWith("- Type:", StringComparison.OrdinalIgnoreCase) || 
+                (trimmed.StartsWith("Type:", StringComparison.OrdinalIgnoreCase) && currentEntity == null))
             {
-                currentEntity = new EntityData { Type = trimmed.Substring("- Type:".Length).Trim().Trim('"') };
+                currentEntity = new EntityData { Type = trimmed.Substring(trimmed.IndexOf(":") + 1).Trim().Trim('"') };
                 data.Entities.Add(currentEntity);
             }
             else if (currentEntity != null)
             {
-                if (trimmed.StartsWith("Texture:"))
+                if (trimmed.StartsWith("Texture:", StringComparison.OrdinalIgnoreCase))
                 {
                     currentEntity.Texture = trimmed.Substring("Texture:".Length).Trim().Trim('"');
                 }
-                else if (trimmed.StartsWith("Position:"))
+                else if (trimmed.StartsWith("Position:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var match = Regex.Match(trimmed, @"X:\s*([\d\.-]+),\s*Y:\s*([\d\.-]+)");
+                    var match = Regex.Match(trimmed, @"X:\s*([\d\.-]+),\s*Y:\s*([\d\.-]+)", RegexOptions.IgnoreCase);
                     if (match.Success)
                     {
                         currentEntity.X = float.Parse(match.Groups[1].Value);
@@ -105,7 +142,7 @@ public class SceneGenerator : IIncrementalGenerator
                         currentEntity.HasPosition = true;
                     }
                 }
-                else if (trimmed.StartsWith("Scale:"))
+                else if (trimmed.StartsWith("Scale:", StringComparison.OrdinalIgnoreCase))
                 {
                     if (float.TryParse(trimmed.Substring("Scale:".Length).Trim(), out float val))
                     {
@@ -113,13 +150,19 @@ public class SceneGenerator : IIncrementalGenerator
                         currentEntity.HasScale = true;
                     }
                 }
-                else if (trimmed.StartsWith("Rotation:"))
+                else if (trimmed.StartsWith("Rotation:", StringComparison.OrdinalIgnoreCase))
                 {
                     if (float.TryParse(trimmed.Substring("Rotation:".Length).Trim(), out float val))
                     {
                         currentEntity.Rotation = val;
                         currentEntity.HasRotation = true;
                     }
+                }
+                else if (trimmed.StartsWith("- Type:", StringComparison.OrdinalIgnoreCase))
+                {
+                     // Found next entity
+                     currentEntity = new EntityData { Type = trimmed.Substring(trimmed.IndexOf(":") + 1).Trim().Trim('"') };
+                     data.Entities.Add(currentEntity);
                 }
             }
         }
@@ -131,9 +174,11 @@ public class SceneGenerator : IIncrementalGenerator
         var sb = new StringBuilder();
         sb.AppendLine("// This file is automatically generated");
         sb.AppendLine("using System;");
+        sb.AppendLine("using System.Linq;");
         sb.AppendLine("using System.Collections.Generic;");
         sb.AppendLine("using System.Runtime.CompilerServices;");
         sb.AppendLine("using Microsoft.Xna.Framework;");
+        sb.AppendLine("using Microsoft.Xna.Framework.Graphics;");
         sb.AppendLine("using MonoGameEngine;");
         sb.AppendLine("using MonoGameEngine.Components;");
         sb.AppendLine();
@@ -144,6 +189,8 @@ public class SceneGenerator : IIncrementalGenerator
             sb.AppendLine("{");
             sb.AppendLine("    public static partial class SceneManager");
             sb.AppendLine("    {");
+            sb.AppendLine($"        private static partial int GetInternalSceneCount() => {scenes.Count};");
+            sb.AppendLine();
             sb.AppendLine("        private static partial Scene LoadSceneInternal(int index)");
             sb.AppendLine("        {");
             sb.AppendLine("            switch(index)");
@@ -195,6 +242,19 @@ public class SceneGenerator : IIncrementalGenerator
 
     private void GenerateSceneLoadMethods(StringBuilder sb, List<SceneData> scenes)
     {
+        sb.AppendLine("    private static Type FindType(string name)");
+        sb.AppendLine("    {");
+        sb.AppendLine("        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var type = assembly.GetType(name) ?? assembly.GetType(\"MonoGameEngine.\" + name);");
+        sb.AppendLine("            if (type != null) return type;");
+        sb.AppendLine("            type = assembly.GetTypes().FirstOrDefault(t => t.Name == name);");
+        sb.AppendLine("            if (type != null) return type;");
+        sb.AppendLine("        }");
+        sb.AppendLine("        return null;");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+
         foreach (var scene in scenes)
         {
             sb.AppendLine($"    private static Scene Load{scene.Name}()");
@@ -203,24 +263,39 @@ public class SceneGenerator : IIncrementalGenerator
             for (int i = 0; i < scene.Entities.Count; i++)
             {
                 var entity = scene.Entities[i];
-                sb.AppendLine($"        var entity_{i} = new {entity.Type}();");
+                sb.AppendLine("        try");
+                sb.AppendLine("        {");
+                sb.AppendLine($"            Type type_{i} = FindType(\"{entity.Type}\");");
+                sb.AppendLine($"            if (type_{i} != null)");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                var entity_{i} = (GameEntity)Activator.CreateInstance(type_{i}, \"{entity.Type}_{i}\");");
                 if (!string.IsNullOrEmpty(entity.Texture))
                 {
-                    sb.AppendLine($"        entity_{i}.Renderer = new SpriteRenderer(entity_{i}) {{ Texture = {entity.Texture} }};");
+                    sb.AppendLine($"                entity_{i}.AddComponent(new SpriteRenderer(GameEngine.Content.Load<Texture2D>(\"{entity.Texture}\")));");
                 }
                 if (entity.HasPosition)
                 {
-                    sb.AppendLine($"        entity_{i}.Transform.Position = new Vector2({entity.X}f, {entity.Y}f);");
+                    sb.AppendLine($"                entity_{i}.Transform.Position = new Vector2({entity.X}f, {entity.Y}f);");
                 }
                 if (entity.HasScale)
                 {
-                    sb.AppendLine($"        entity_{i}.Transform.Scale = {entity.Scale}f;");
+                    sb.AppendLine($"                entity_{i}.Transform.Scale = {entity.Scale}f;");
                 }
                 if (entity.HasRotation)
                 {
-                    sb.AppendLine($"        entity_{i}.Transform.Rotation = {entity.Rotation}f;");
+                    sb.AppendLine($"                entity_{i}.Transform.Rotation = {entity.Rotation}f;");
                 }
-                sb.AppendLine($"        scene.AddEntity(entity_{i});");
+                sb.AppendLine($"                scene.AddEntity(entity_{i});");
+                sb.AppendLine("            }");
+                sb.AppendLine("            else");
+                sb.AppendLine("            {");
+                sb.AppendLine($"                GameEngine.Logger.Log($\"Entity type '{entity.Type}' not found. Skipping in scene '{scene.Name}'.\", ILogger.LogLevel.Warning);");
+                sb.AppendLine("            }");
+                sb.AppendLine("        }");
+                sb.AppendLine("        catch (Exception ex)");
+                sb.AppendLine("        {");
+                sb.AppendLine($"            GameEngine.Logger.Log($\"Failed to load entity '{entity.Type}' in scene '{scene.Name}': {{ex.Message}}\", ILogger.LogLevel.Warning);");
+                sb.AppendLine("        }");
             }
             sb.AppendLine("        return scene;");
             sb.AppendLine("    }");

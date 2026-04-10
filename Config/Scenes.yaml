@@ -1,0 +1,5 @@
+# MonoGameEngine Scene Registry
+# Add your scenes here in the following format:
+# - Name: "MyScene"
+#   Path: "Scenes/MyScene.yaml"
+#   Index: 0

@@ -1,6 +1,7 @@
 ﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
+using MonoGameEngine.Loggers;
 
 namespace MonoGameEngine;
 
@@ -15,6 +16,7 @@ public class GameEngine : Game
     public static AudioController Audio { get; private set; }
     public static InputController Input { get; private set; }
     public static EventBus EventBus { get; private set; }
+    public static ILogger Logger { get; private set; }
 
     public GameEngine(string title, int width, int height, bool fullScreen)
     {
@@ -23,6 +25,7 @@ public class GameEngine : Game
         Audio = new AudioController(this);
         Input = new InputController(this);
         EventBus = new EventBus();
+        Logger = new DebugLogger();
         Viewport.Initialize(Graphics, width, height, fullScreen);
         Content = base.Content;
         Content.RootDirectory = "Content";
@@ -42,6 +45,14 @@ public class GameEngine : Game
         SpriteBatch = new SpriteBatch(GraphicsDevice);
         base.LoadContent();
         Bootstrapper.InvokeContentLoadingMethods(Content);
+
+        if (!SceneManager.HasScenes)
+        {
+            Logger.Log("No scenes found. Please ensure Scenes.yaml is present and configured correctly.", ILogger.LogLevel.Error);
+            Exit();
+            return;
+        }
+
         SceneManager.LoadScene(0);
     }
 
@@ -53,8 +64,10 @@ public class GameEngine : Game
 
     protected override void Draw(GameTime gameTime)
     {
-        GraphicsDevice.Clear(Color.CornflowerBlue);
-        SceneManager.CurrentScene.Draw(SpriteBatch);
+        var target = SceneManager.CurrentScene.GetFrame();
+        SpriteBatch.Begin(transformMatrix: Viewport.GetScaleMatrix(), samplerState: SamplerState.PointClamp);
+        SpriteBatch.Draw(target, Vector2.Zero, Color.White);
+        SpriteBatch.End();
         base.Draw(gameTime);
     }
 }

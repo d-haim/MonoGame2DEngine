@@ -1,25 +1,25 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using MonoGameEngine.Components;
 using MonoGameEngine.Extensions;
+using MonoGameEngine.Loggers;
 
 namespace MonoGameEngine;
 
-public sealed class Scene
+public sealed class Scene : IDisposable
 {
-    private const string ON_ACTIVE_METHOD_NAME = "OnEnable";
-    private const string ON_DEACTIVATE_METHOD_NAME = "OnDisable";
+    private const string ON_ENABLE_METHOD_NAME = "OnEnable";
+    private const string ON_DISABLE_METHOD_NAME = "OnDisable";
     private const string ON_UPDATE_METHOD_NAME = "OnUpdate";
     private const string DELTA_TIME_PARAMETER_NAME = "deltaTime";
     private const string ON_DRAW_METHOD_NAME = "OnDraw";
     private const string ON_COLLISION_METHOD_NAME = "OnCollision";
     private const string ON_TRIGGER_METHOD_NAME = "OnTrigger";
 
-    private HashSet<GameEntity> _entities = [];
+    private List<GameEntity> _entities = [];
     private HashSet<Component> _cachedComponents = [];
     private List<GameEntity> _pendingAdd = [];
     private List<GameEntity> _pendingRemove = [];
@@ -32,6 +32,13 @@ public sealed class Scene
     private Dictionary<Component, Action<Collider>> _onCollisionMethods = [];
     private Dictionary<Component, Action<Collider>> _onTriggerMethods = [];
     private HashSet<Action<float>> _activeUpdates = [];
+    private readonly RenderTarget2D _target;
+    private bool _isDisposing = false;
+
+    public Scene()
+    {
+        _target = Viewport.GetRenderTarget2D();
+    }
 
     /// <summary>
     /// Add an entity from the scene
@@ -40,6 +47,8 @@ public sealed class Scene
     /// <param name="entity"></param>
     public void AddEntity(GameEntity entity)
     {
+        if (_isDisposing)
+            return;
         try
         {
             ArgumentNullException.ThrowIfNull(entity);
@@ -51,7 +60,7 @@ public sealed class Scene
             return;
         }
 
-        if (_pendingAdd.Contains(entity))
+        if (_pendingAdd.Contains(entity) || _entities.Contains(entity))
             return;
 
         _pendingAdd.Add(entity);
@@ -65,6 +74,8 @@ public sealed class Scene
     /// <param name="entity"></param>
     public void RemoveEntity(GameEntity entity)
     {
+        if (_isDisposing)
+            return;
         try
         {
             ArgumentNullException.ThrowIfNull(entity);
@@ -76,7 +87,7 @@ public sealed class Scene
             return;
         }
 
-        if (_pendingRemove.Contains(entity))
+        if (_pendingRemove.Contains(entity) || !_entities.Contains(entity))
             return;
 
         DisableEntity(entity);
@@ -90,6 +101,8 @@ public sealed class Scene
     /// <param name="entity"></param>
     public void EnableEntity(GameEntity entity)
     {
+        if (_isDisposing)
+            return;
         if (_pendingEnable.Contains(entity))
             return;
 
@@ -104,47 +117,26 @@ public sealed class Scene
     /// <param name="entity"></param>
     public void DisableEntity(GameEntity entity)
     {
+        if (_isDisposing)
+            return;
         if (_pendingDisable.Contains(entity))
             return;
 
         _pendingDisable.Add(entity);
     }
 
+    public void Unload()
+    {
+        Dispose();
+    }
+
     internal void Update(GameTime gameTime)
     {
+        if (_isDisposing)
+            return;
         ApplyChanges();
         DoEntityUpdates(gameTime);
         DoCollisions();
-    }
-
-    internal void Draw(SpriteBatch spriteBatch)
-    {
-        ApplyChanges();
-        var visibleEntities = _entities.Where(e => e.IsVisible);
-        var scalingMatrix = Viewport.GetScaleMatrix();
-        spriteBatch.Begin(transformMatrix: scalingMatrix, samplerState: SamplerState.PointClamp);
-        foreach (var entity in visibleEntities)
-        {
-            foreach (var component in entity.Components)
-            {
-                if (_onDrawMethods.TryGetValue(component, out var callback))
-                {
-                    callback();
-                }
-            }
-
-            spriteBatch.Draw(
-                entity.Renderer.Texture,
-                entity.Transform.Position,
-                null,
-                entity.Renderer.Color,
-                entity.Transform.Rotation,
-                entity.Renderer.Pivot,
-                entity.Transform.Scale,
-                entity.Renderer.Effects,
-                0f);
-        }
-        spriteBatch.End();
     }
 
     internal void RegisterComponentsCallbacks(IEnumerable<Component> components)
@@ -159,13 +151,13 @@ public sealed class Scene
     {
         bool wasCached = false;
 
-        if (component.TryGetCallbackFromMethod<Action>(ON_ACTIVE_METHOD_NAME, out var activeMethod))
+        if (component.TryGetCallbackFromMethod<Action>(ON_ENABLE_METHOD_NAME, out var activeMethod))
         {
             _onEnableMethods.Add(component, activeMethod);
             wasCached = true;
         }
 
-        if (component.TryGetCallbackFromMethod<Action>(ON_DEACTIVATE_METHOD_NAME, out var deactivateMethod))
+        if (component.TryGetCallbackFromMethod<Action>(ON_DISABLE_METHOD_NAME, out var deactivateMethod))
         {
             _onDisableMethods.Add(component, deactivateMethod);
             wasCached = true;
@@ -237,20 +229,19 @@ public sealed class Scene
 
             if (_onUpdateMethods.TryGetValue(component, out var onUpdate))
             {
-                try
-                {
-                    _activeUpdates.Add(onUpdate);
-                }
-                catch (System.Exception e)
-                {
-                    System.Diagnostics.Debug.Write(e.Message);
-                    System.Diagnostics.Debug.WriteLine(e.StackTrace);
-                }
+                _activeUpdates.Add(onUpdate);
             }
 
             if (_onEnableMethods.TryGetValue(component, out var callback))
             {
-                callback();
+                try
+                {
+                    callback();
+                }
+                catch (System.Exception e)
+                {
+                    OnComponentCallbackError(component, e.Message, ON_ENABLE_METHOD_NAME, e.StackTrace);
+                }
             }
         }
     }
@@ -272,7 +263,14 @@ public sealed class Scene
 
             if (_onDisableMethods.TryGetValue(component, out var callback))
             {
-                callback();
+                try
+                {
+                    callback();
+                }
+                catch (System.Exception e)
+                {
+                    OnComponentCallbackError(component, e.Message, ON_DISABLE_METHOD_NAME, e.StackTrace);
+                }
             }
         }
     }
@@ -313,12 +311,10 @@ public sealed class Scene
             _pendingAdd.Clear();
             foreach (var entity in toAdd)
             {
-                if (_entities.Add(entity))
-                {
-                    entity.AttachedScene = this;
-                    var components = entity.Components.DeepCopy();
-                    RegisterComponentsCallbacks(components);
-                }
+                entity.AttachedScene = this;
+                var components = entity.Components.DeepCopy();
+                RegisterComponentsCallbacks(components);
+                _entities.Add(entity);
             }
             toAdd.Clear();
         }
@@ -340,7 +336,14 @@ public sealed class Scene
         float deltaTime = (float)gameTime.ElapsedGameTime.TotalSeconds;
         foreach (var callback in _activeUpdates)
         {
-            callback(deltaTime);
+            try
+            {
+                callback(deltaTime);
+            }
+            catch (System.Exception e)
+            {
+                OnComponentCallbackError(null, e.Message, ON_DRAW_METHOD_NAME, e.StackTrace);
+            }
         }
     }
 
@@ -368,7 +371,14 @@ public sealed class Scene
 
                             if (_onCollisionMethods.TryGetValue(component, out var collision))
                             {
-                                collision(other);
+                                try
+                                {
+                                    collision(other);
+                                }
+                                catch (System.Exception e)
+                                {
+                                    OnComponentCallbackError(component, e.Message, ON_COLLISION_METHOD_NAME, e.StackTrace);
+                                }
                             }
                         }
 
@@ -384,7 +394,14 @@ public sealed class Scene
 
                                 if (_onTriggerMethods.TryGetValue(component, out var trigger))
                                 {
-                                    trigger(collider);
+                                    try
+                                    {
+                                        trigger(collider);
+                                    }
+                                    catch (System.Exception e)
+                                    {
+                                        OnComponentCallbackError(component, e.Message, ON_TRIGGER_METHOD_NAME, e.StackTrace);
+                                    }
                                 }
                             }
                         }
@@ -392,5 +409,87 @@ public sealed class Scene
                 }
             }
         }
+    }
+
+    private void DrawScene(SpriteBatch spriteBatch)
+    {
+        ApplyChanges();
+        var visibleEntities = _entities.Where(e => e.IsVisible);
+        foreach (var entity in visibleEntities)
+        {
+            SpriteRenderer sr = null;
+            foreach (var component in entity.Components)
+            {
+                if (component is SpriteRenderer spriteRenderer)
+                {
+                    sr = spriteRenderer;
+                    continue;
+                }
+
+                if (_onDrawMethods.TryGetValue(component, out var callback))
+                {
+                    try
+                    {
+                        callback();
+                    }
+                    catch (System.Exception e)
+                    {
+                        OnComponentCallbackError(component, e.Message, ON_DRAW_METHOD_NAME, e.StackTrace);
+                    }
+                }
+            }
+
+            if (sr != null)
+            {
+                try
+                {
+                    sr.Draw(spriteBatch);
+                }
+                catch (System.Exception e)
+                {
+                    OnComponentCallbackError(sr, e.Message, "SpriteRender.Draw", e.StackTrace);
+                }
+            }
+        }
+    }
+
+    private void OnComponentCallbackError(Component component, string message, string callbackName, string stackTrace = "")
+    {
+        GameEngine.Logger.Log($"{component?.Entity.Name}.{component?.GetType().Name}. {callbackName} error {message}.\n{stackTrace}", ILogger.LogLevel.Error);
+    }
+
+    public RenderTarget2D GetFrame()
+    {
+        GameEngine.GraphicsDevice.SetRenderTarget(_target);
+        GameEngine.GraphicsDevice.Clear(Color.Black);
+
+        GameEngine.SpriteBatch.Begin();
+        DrawScene(GameEngine.SpriteBatch);
+        GameEngine.SpriteBatch.End();
+
+        GameEngine.GraphicsDevice.SetRenderTarget(null);
+        return _target;
+    }
+
+    public void Dispose()
+    {
+        if (_isDisposing)
+            return;
+        _isDisposing = true;
+        _pendingAdd.Clear();
+        _pendingEnable.Clear();
+        _pendingDisable.Clear();
+        _pendingRemove.Clear();
+        _pendingRemove.AddRange(_entities);
+        ApplyChanges();
+        _cachedComponents.Clear();
+        _onCollisionMethods.Clear();
+        _onTriggerMethods.Clear();
+        _onDisableMethods.Clear();
+        _onEnableMethods.Clear();
+        _onDrawMethods.Clear();
+        _onUpdateMethods.Clear();
+        _activeUpdates.Clear();
+        _entities.Clear();
     }
 }

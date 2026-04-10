@@ -7,6 +7,7 @@ namespace MonoGameEngine;
 
 public sealed class GameEntity
 {
+    public string Name { get; set; }
     public Transformation Transform { get; private set; }
     public SpriteRenderer Renderer { get; private set; }
     public Collider Collider { get; private set; }
@@ -18,8 +19,9 @@ public sealed class GameEntity
 
     internal List<Component> Components = [];
 
-    public GameEntity(params Component[] components)
+    public GameEntity(string name = "new GameEntity", params Component[] components)
     {
+        Name = name;
         IsActive = false;
         Transform = new Transformation() { Entity = this };
 

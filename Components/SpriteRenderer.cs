@@ -15,4 +15,18 @@ public sealed class SpriteRenderer : Component
     {
         Texture = texture;
     }
+
+    internal void Draw(SpriteBatch spriteBatch)
+    {
+        spriteBatch.Draw(
+                Texture,
+                Transform.Position,
+                null,
+                Color,
+                Transform.Rotation,
+                Renderer.Pivot,
+                Transform.Scale,
+                Effects,
+                0f);
+    }
 }
