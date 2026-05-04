@@ -16,7 +16,9 @@ public sealed class GameEntity
     public bool IsVisible => Renderer != null && Renderer.Texture != null;
     public Scene AttachedScene { get; set; }
 
-    internal Dictionary<Type, Component> Components = [];
+    private Dictionary<Type, Component> _components = [];
+    private HashSet<Component> _cachedComponents = [];
+    internal IReadOnlyCollection<Component> Components => _cachedComponents;
 
     public GameEntity(string name = "new GameEntity", params Type[] components)
     {
@@ -61,7 +63,7 @@ public sealed class GameEntity
             return;
 
 
-        if (Components.TryGetValue(componentType, out _))
+        if (_components.TryGetValue(componentType, out _))
         {
             GameEngine.Logger.Log("Component ${component.GetType().Name} already exists on entity ${Name}.", Loggers.ILogger.LogLevel.Error);
             return;
@@ -85,7 +87,9 @@ public sealed class GameEntity
         if (component is Transformation)
             return;
 
-        Components.Add(componentType, component);
+        _components.Add(componentType, component);
+        _cachedComponents.Add(component);
+
         if (component is SpriteRenderer spriteRenderer)
             Renderer = spriteRenderer;
         if (component is Collider collider)
@@ -108,7 +112,7 @@ public sealed class GameEntity
             return;
         }
 
-        if (!Components.TryGetValue(componentType, out var component))
+        if (!_components.TryGetValue(componentType, out var component))
         {
             GameEngine.Logger.Log("Component ${componentType.Name} does not exist on entity ${Name}.", Loggers.ILogger.LogLevel.Warning);
             return;
@@ -118,7 +122,8 @@ public sealed class GameEntity
             return;
 
         component.Entity = null;
-        Components.Remove(componentType);
+        _components.Remove(componentType);
+        _cachedComponents.Remove(component);
 
         if (component is SpriteRenderer spriteRenderer)
             Renderer = null;
@@ -131,7 +136,7 @@ public sealed class GameEntity
 
     public T GetComponent<T>() where T : Component
     {
-        if (Components.TryGetValue(typeof(T), out var component))
+        if (_components.TryGetValue(typeof(T), out var component))
             return component as T;
         return null;
     }

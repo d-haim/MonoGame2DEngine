@@ -221,7 +221,7 @@ public sealed class Scene : IDisposable
     {
         entity.SetActive(true, this);
 
-        var components = entity.Components.DeepCopy();
+        var components = entity.Components;
         foreach (var component in components)
         {
             if (!_cachedComponents.Contains(component))
@@ -250,7 +250,7 @@ public sealed class Scene : IDisposable
     {
         entity.SetActive(false, this);
 
-        var components = entity.Components.DeepCopy();
+        var components = entity.Components;
         foreach (var component in components)
         {
             if (!_cachedComponents.Contains(component))
@@ -282,7 +282,7 @@ public sealed class Scene : IDisposable
     {
         if (_pendingDisable.Count > 0)
         {
-            List<GameEntity> toDisable = _pendingDisable.DeepCopy();
+            ICollection<GameEntity> toDisable = _pendingDisable.ShallowCopy();
             _pendingDisable.Clear();
             foreach (var entity in toDisable)
             {
@@ -293,11 +293,11 @@ public sealed class Scene : IDisposable
 
         if (_pendingRemove.Count > 0)
         {
-            List<GameEntity> toRemove = _pendingRemove.DeepCopy();
+            ICollection<GameEntity> toRemove = _pendingRemove.ShallowCopy();
             _pendingRemove.Clear();
             foreach (var entity in toRemove)
             {
-                var components = entity.Components.DeepCopy();
+                var components = entity.Components;
                 UnregisterComponentsCallbacks(components);
                 entity.AttachedScene = null;
                 _entities.Remove(entity);
@@ -307,12 +307,12 @@ public sealed class Scene : IDisposable
 
         if (_pendingAdd.Count > 0)
         {
-            List<GameEntity> toAdd = _pendingAdd.DeepCopy();
+            ICollection<GameEntity> toAdd = _pendingAdd.ShallowCopy();
             _pendingAdd.Clear();
             foreach (var entity in toAdd)
             {
                 entity.AttachedScene = this;
-                var components = entity.Components.DeepCopy();
+                var components = entity.Components;
                 RegisterComponentsCallbacks(components);
                 _entities.Add(entity);
             }
@@ -321,7 +321,7 @@ public sealed class Scene : IDisposable
 
         if (_pendingEnable.Count > 0)
         {
-            List<GameEntity> toEnable = _pendingEnable.DeepCopy();
+            ICollection<GameEntity> toEnable = _pendingEnable.ShallowCopy();
             _pendingEnable.Clear();
             foreach (var entity in toEnable)
             {
@@ -361,7 +361,7 @@ public sealed class Scene : IDisposable
                 {
                     if (collider != other && collider.Intersects(other))
                     {
-                        var components = collider.Entity.Components.DeepCopy();
+                        var components = collider.Entity.Components;
                         foreach (var component in components)
                         {
                             if (component == collider || _cachedComponents.Contains(component) == false)
@@ -384,7 +384,7 @@ public sealed class Scene : IDisposable
 
                         if (other.IsTrigger)
                         {
-                            components = other.Entity.Components.DeepCopy();
+                            components = other.Entity.Components;
                             foreach (var component in components)
                             {
                                 if (component == other || _cachedComponents.Contains(component) == false)
