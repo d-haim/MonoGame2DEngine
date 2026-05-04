@@ -1,6 +1,5 @@
+using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json.Serialization.Metadata;
 using MonoGameEngine.Components;
 
 namespace MonoGameEngine;
@@ -17,9 +16,9 @@ public sealed class GameEntity
     public bool IsVisible => Renderer != null && Renderer.Texture != null;
     public Scene AttachedScene { get; set; }
 
-    internal List<Component> Components = [];
+    internal Dictionary<Type, Component> Components = [];
 
-    public GameEntity(string name = "new GameEntity", params Component[] components)
+    public GameEntity(string name = "new GameEntity", params Type[] components)
     {
         Name = name;
         IsActive = false;
@@ -51,17 +50,42 @@ public sealed class GameEntity
         }
     }
 
-    //TODO componentID for optimized query
-    public void AddComponent(Component component)
+    public void AddComponent<TComponent>() where TComponent : Component
     {
+        AddComponent(typeof(TComponent));
+    }
+
+    public void AddComponent(Type componentType)
+    {
+        if (!typeof(Component).IsAssignableFrom(componentType))
+            return;
+
+
+        if (Components.TryGetValue(componentType, out _))
+        {
+            GameEngine.Logger.Log("Component ${component.GetType().Name} already exists on entity ${Name}.", Loggers.ILogger.LogLevel.Error);
+            return;
+        }
+
+        var ctr = componentType.GetConstructor(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic, null, [typeof(GameEntity)], null);
+        if (ctr == null)
+        {
+            GameEngine.Logger.Log("Failed to get component constructor for ${componentType.Name}.", Loggers.ILogger.LogLevel.Error);
+            return;
+        }
+
+        Component component = (Component)ctr.Invoke([this]);
+        if (component == null)
+        {
+            GameEngine.Logger.Log("Failed to instantiate component ${componentType.Name}.", Loggers.ILogger.LogLevel.Error);
+            return;
+        }
+
+        component.Entity = this;
         if (component is Transformation)
             return;
 
-        component.Entity = this;
-        if (component.IsSingleInstance && Components.Any(c => c.GetType() == component.GetType()))
-            return;
-
-        Components.Add(component);
+        Components.Add(componentType, component);
         if (component is SpriteRenderer spriteRenderer)
             Renderer = spriteRenderer;
         if (component is Collider collider)
@@ -71,15 +95,31 @@ public sealed class GameEntity
         AttachedScene?.RegisterComponentCallbacks(component);
     }
 
-    public void RemoveComponent(Component component)
+    public void RemoveComponent<TComponent>() where TComponent : Component
     {
+        RemoveComponent(typeof(TComponent));
+    }
+
+    public void RemoveComponent(Type componentType)
+    {
+        if (!typeof(Component).IsAssignableFrom(componentType))
+        {
+            GameEngine.Logger.Log("${componentType.Name} is not a component.", Loggers.ILogger.LogLevel.Warning);
+            return;
+        }
+
+        if (!Components.TryGetValue(componentType, out var component))
+        {
+            GameEngine.Logger.Log("Component ${componentType.Name} does not exist on entity ${Name}.", Loggers.ILogger.LogLevel.Warning);
+            return;
+        }
+
         if (component is Transformation)
             return;
 
-        if (Components.Contains(component))
-            Components.Remove(component);
-
         component.Entity = null;
+        Components.Remove(componentType);
+
         if (component is SpriteRenderer spriteRenderer)
             Renderer = null;
         if (component is Collider collider)
@@ -91,7 +131,9 @@ public sealed class GameEntity
 
     public T GetComponent<T>() where T : Component
     {
-        return Components.FirstOrDefault(c => c is T) as T;
+        if (Components.TryGetValue(typeof(T), out var component))
+            return component as T;
+        return null;
     }
 
     public bool TryGetComponent<T>(out T component) where T : Component

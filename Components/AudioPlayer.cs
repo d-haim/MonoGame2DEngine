@@ -25,12 +25,6 @@ public sealed class AudioPlayer : Component
     private bool _autoPlay { get; set; } = true;
     private bool IsPlaying => _instance != null && _instance.State == SoundState.Playing;
 
-    public AudioPlayer(SoundEffect soundEffect = null, bool autoPlay = true)
-    {
-        _autoPlay = autoPlay;
-        SoundEffect = soundEffect;
-    }
-
     public void Play()
     {
         if (IsPlaying)

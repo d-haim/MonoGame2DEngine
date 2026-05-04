@@ -7,5 +7,9 @@ public abstract class Component
     public SpriteRenderer Renderer => Entity.Renderer;
     public Collider Collider => Entity.Collider;
     public AudioPlayer Audio => Entity.Audio;
-    public bool IsSingleInstance { get; internal set; } = true;
+
+    protected Component()
+    {
+
+    }
 }

@@ -25,11 +25,6 @@ public sealed class Collider : Component
         }
     }
 
-    public Collider(bool isTrigger = false)
-    {
-        IsTrigger = isTrigger;
-    }
-
     public bool Intersects(Collider other)
     {
         if (other == null) return false;
